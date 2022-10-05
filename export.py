@@ -320,8 +320,10 @@ def export_saved_model(model,
         import tensorflow as tf
     from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
 
-    from models.tf import TFModel
-
+    from models.tf import TFModel, TFDetect
+    #
+    TFDetect.export = True
+    #
     LOGGER.info(f'\n{prefix} starting export with tensorflow {tf.__version__}...')
     f = str(file).replace('.pt', '_saved_model')
     batch_size, ch, *imgsz = list(im.shape)  # BCHW
@@ -369,27 +371,30 @@ def export_pb(keras_model, file, prefix=colorstr('TensorFlow GraphDef:')):
 
 
 @try_export
-def export_tflite(keras_model, im, file, int8, data, nms, agnostic_nms, prefix=colorstr('TensorFlow Lite:')):
+def export_tflite(keras_model, im, file, int8, data, nms, agnostic_nms, prefix=colorstr('TensorFlow Lite:'), max_int8_img_cnt=100):
     # YOLOv5 TensorFlow Lite export
     import tensorflow as tf
 
     LOGGER.info(f'\n{prefix} starting export with tensorflow {tf.__version__}...')
     batch_size, ch, *imgsz = list(im.shape)  # BCHW
-    f = str(file).replace('.pt', '-fp16.tflite')
+    # f = str(file).replace('.pt', '-fp16.tflite')
+    f = str(file).replace('.pt', '-fp32.tflite')
 
     converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
-    converter.target_spec.supported_types = [tf.float16]
+    # converter.target_spec.supported_types = [tf.float16]
+    converter.target_spec.supported_types = [tf.float32]
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     if int8:
         from models.tf import representative_dataset_gen
-        dataset = LoadImages(check_dataset(check_yaml(data))['train'], img_size=imgsz, auto=False)
-        converter.representative_dataset = lambda: representative_dataset_gen(dataset, ncalib=100)
+        dataset = LoadImages(path=data, img_size=imgsz, auto=False)
+        converter.representative_dataset = lambda: representative_dataset_gen(dataset, ncalib=max_int8_img_cnt)
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
         converter.target_spec.supported_types = []
         converter.inference_input_type = tf.uint8  # or tf.int8
         converter.inference_output_type = tf.uint8  # or tf.int8
         converter.experimental_new_quantizer = True
+        converter._experimental_disable_per_channel=True    # disbable per channel quant
         f = str(file).replace('.pt', '-int8.tflite')
     if nms or agnostic_nms:
         converter.target_spec.supported_ops.append(tf.lite.OpsSet.SELECT_TF_OPS)
@@ -466,6 +471,7 @@ def run(
         keras=False,  # use Keras
         optimize=False,  # TorchScript: optimize for mobile
         int8=False,  # CoreML/TF INT8 quantization
+        max_int8_img_cnt=100, # Max number of images used for quantization
         dynamic=False,  # ONNX/TF/TensorRT: dynamic axes
         simplify=False,  # ONNX: simplify model
         opset=12,  # ONNX: opset version
@@ -549,7 +555,7 @@ def run(
         if pb or tfjs:  # pb prerequisite to tfjs
             f[6], _ = export_pb(s_model, file)
         if tflite or edgetpu:
-            f[7], _ = export_tflite(s_model, im, file, int8 or edgetpu, data=data, nms=nms, agnostic_nms=agnostic_nms)
+            f[7], _ = export_tflite(s_model, im, file, int8=int8 or edgetpu, data=data, nms=nms, agnostic_nms=agnostic_nms, max_int8_img_cnt=max_int8_img_cnt)
         if edgetpu:
             f[8], _ = export_edgetpu(file)
         if tfjs:
@@ -586,6 +592,7 @@ def parse_opt():
     parser.add_argument('--keras', action='store_true', help='TF: use Keras')
     parser.add_argument('--optimize', action='store_true', help='TorchScript: optimize for mobile')
     parser.add_argument('--int8', action='store_true', help='CoreML/TF INT8 quantization')
+    parser.add_argument('--max-int8-img-cnt', type=int, default=100, help='max num images used for quantization')    
     parser.add_argument('--dynamic', action='store_true', help='ONNX/TF/TensorRT: dynamic axes')
     parser.add_argument('--simplify', action='store_true', help='ONNX: simplify model')
     parser.add_argument('--opset', type=int, default=12, help='ONNX: opset version')

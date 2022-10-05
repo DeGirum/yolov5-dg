@@ -251,7 +251,10 @@ class TFSPP(keras.layers.Layer):
 
     def call(self, inputs):
         x = self.cv1(inputs)
-        return self.cv2(tf.concat([x] + [m(x) for m in self.m], 3))
+        y = x
+        for m in self.m:
+            y = tf.concat([y, m(x)], 3)
+        return self.cv2(y)
 
 
 class TFSPPF(keras.layers.Layer):
@@ -267,11 +270,14 @@ class TFSPPF(keras.layers.Layer):
         x = self.cv1(inputs)
         y1 = self.m(x)
         y2 = self.m(y1)
-        return self.cv2(tf.concat([x, y1, y2, self.m(y2)], 3))
+        y3 = tf.concat([x, y1], 3)
+        y4 = tf.concat([y2, self.m(y2)], 3)
+        return self.cv2( tf.concat([y3, y4], 3) )
 
 
 class TFDetect(keras.layers.Layer):
     # TF YOLOv5 Detect layer
+    export = False  # export mode
     def __init__(self, nc=80, anchors=(), ch=(), imgsz=(640, 640), w=None):  # detection layer
         super().__init__()
         self.stride = tf.convert_to_tensor(w.stride.numpy(), dtype=tf.float32)
@@ -289,12 +295,12 @@ class TFDetect(keras.layers.Layer):
             ny, nx = self.imgsz[0] // self.stride[i], self.imgsz[1] // self.stride[i]
             self.grid[i] = self._make_grid(nx, ny)
 
-    def call(self, inputs):
+    def call_org(self, inputs):
         z = []  # inference output
         x = []
         for i in range(self.nl):
             x.append(self.m[i](inputs[i]))
-            # x(bs,20,20,255) to x(bs,3,20,20,85)
+            # x(bs,20,20,255) to x(bs,20,20,3,85)
             ny, nx = self.imgsz[0] // self.stride[i], self.imgsz[1] // self.stride[i]
             x[i] = tf.reshape(x[i], [-1, ny * nx, self.na, self.no])
 
@@ -311,6 +317,23 @@ class TFDetect(keras.layers.Layer):
                 z.append(tf.reshape(y, [-1, self.na * ny * nx, self.no]))
 
         return tf.transpose(x, [0, 2, 1, 3]) if self.training else (tf.concat(z, 1),)
+
+    def call_onnx(self, inputs):
+        z = []  # inference output
+        x = []
+        for i in range(self.nl):
+            x.append(self.m[i](inputs[i]))
+            # x(bs,20,20,255) to x(bs,20,20,3,85)
+            ny, nx = self.imgsz[0] // self.stride[i], self.imgsz[1] // self.stride[i]
+            x[i] = tf.reshape(x[i], [-1, ny * nx, self.na, self.no])
+            z.append( tf.reshape(x[i], [-1, self.na * ny * nx, self.no]))  # Mehrdad: Onnx
+        return tf.concat(z, 1)
+    
+    def call(self, inputs):
+        if self.export == False:
+            return self.call_org(inputs)
+        else:
+            return self.call_onnx(inputs)
 
     @staticmethod
     def _make_grid(nx=20, ny=20):
@@ -546,6 +569,8 @@ def activations(act=nn.SiLU):
         return lambda x: x * tf.nn.relu6(x + 3) * 0.166666667
     elif isinstance(act, (nn.SiLU, SiLU)):
         return lambda x: keras.activations.swish(x)
+    elif isinstance(act, (nn.ReLU6)):
+        return lambda x: tf.nn.relu6(x)
     else:
         raise Exception(f'no matching TensorFlow activation found for PyTorch activation {act}')
 
