@@ -86,6 +86,15 @@ class TFConv(keras.layers.Layer):
     def call(self, inputs):
         return self.act(self.bn(self.conv(inputs)))
 
+class TFMaxPool2d(keras.layers.Layer):
+    def __init__(self, k, s=None, p=None, w=None):
+        super().__init__()
+        mp = keras.layers.MaxPool2D(pool_size=k, strides=s, padding='SAME' if s == 1 else 'VALID')
+        self.m = mp if s == 1 else keras.Sequential([TFPad(autopad(k, p)), mp])
+
+    def call(self, inputs):
+        return self.m(inputs)
+
 
 class TFDWConv(keras.layers.Layer):
     # Depthwise convolution
