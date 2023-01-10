@@ -123,7 +123,15 @@ def run(
         with dt[1]:
             visualize = increment_path(save_dir / Path(path).stem, mkdir=True) if visualize else False
             pred = model(im, augment=augment, visualize=visualize)
-
+            preds = pred[0].cpu()
+            print(preds.shape)
+            xc = preds[..., 4] > 0.25
+            
+            if save_txt:
+                p = Path(path)
+                with open(str(save_dir/p.name)+'pred','w') as f:
+                    f.write('\n'.join(str(pred.numpy())))
+            
         # NMS
         with dt[2]:
             pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
