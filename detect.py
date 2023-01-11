@@ -127,10 +127,10 @@ def run(
             print(preds.shape)
             xc = preds[..., 4] > 0.25
             
-            if save_txt:
-                p = Path(path)
-                with open(str(save_dir/p.name)+'pred','w') as f:
-                    f.write('\n'.join(str(pred.numpy())))
+            #if save_txt:
+            #    p = Path(path)
+            #    with open(str(save_dir/p.name)+'pred','w') as f:
+            #        f.write('\n'.join(str(pred.numpy())))
             
         # NMS
         with dt[2]:
@@ -165,10 +165,11 @@ def run(
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
                 # Write results
-                for *xyxy, conf, cls in reversed(det):
+                for single_det in reversed(det):
+                    *xyxy, conf, cls = single_det[0:6]
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+                        line = (cls, *xywh, conf, *single_det[6:]) if save_conf else (cls, *xywh)  # label format
                         with open(f'{txt_path}.txt', 'a') as f:
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 

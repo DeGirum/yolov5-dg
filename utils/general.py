@@ -884,7 +884,7 @@ def non_max_suppression(
         # If none remain process next image
         if not x.shape[0]:
             continue
-
+        obj_class_probs = x[:, 4:].detach().clone()
         # Compute conf
         x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
 
@@ -914,8 +914,10 @@ def non_max_suppression(
             continue
         elif n > max_nms:  # excess boxes
             x = x[x[:, 4].argsort(descending=True)[:max_nms]]  # sort by confidence
+            obj_class_probs = obj_class_probs[obj_class_probs[:, 0].argsort(descending=True)[:max_nms]]
         else:
             x = x[x[:, 4].argsort(descending=True)]  # sort by confidence
+            obj_class_probs= obj_class_probs[obj_class_probs[:, 0].argsort(descending=True)]
 
         # Batched NMS
         c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
@@ -931,7 +933,7 @@ def non_max_suppression(
             if redundant:
                 i = i[iou.sum(1) > 1]  # require redundancy
 
-        output[xi] = x[i]
+        output[xi] = torch.cat((x[i],obj_class_probs[i]),-1)
         if mps:
             output[xi] = output[xi].to(device)
         if (time.time() - t) > time_limit:
