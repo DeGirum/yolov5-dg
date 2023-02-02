@@ -69,6 +69,7 @@ if platform.system() != 'Windows':
 
 from models.experimental import attempt_load
 from models.yolo import ClassificationModel, Detect, DetectionModel, SegmentationModel
+from models.common import Focus # Mehrdad: ONNX
 from utils.dataloaders import LoadImages
 from utils.general import (LOGGER, Profile, check_dataset, check_img_size, check_requirements, check_version,
                            check_yaml, colorstr, file_size, get_default_args, print_args, url2file, yaml_save)
@@ -550,6 +551,9 @@ def run(
             m.inplace = inplace
             m.dynamic = dynamic
             m.export = True
+        elif isinstance(m, Focus):  # Mehrdad: ONNX
+            m.export = True
+            im = im.view((im.shape[0], im.shape[1] * 4, im.shape[2]//2, im.shape[3]//2))
 
     for _ in range(2):
         y = model(im)  # dry runs

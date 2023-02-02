@@ -124,7 +124,7 @@ class TFDWConvTranspose2d(keras.layers.Layer):
         # ch_in, ch_out, weights, kernel, stride, padding, groups
         super().__init__()
         assert c1 == c2, f'TFDWConv() output={c2} must be equal to input={c1} channels'
-        assert k == 4 and p1 == 1, 'TFDWConv() only valid for k=4 and p1=1'
+        # assert k == 4 and p1 == 1, 'TFDWConvTranspose2d() only valid for k=4 and p1=1'
         weight, bias = w.weight.permute(2, 3, 1, 0).numpy(), w.bias.numpy()
         self.c1 = c1
         self.conv = [
@@ -136,6 +136,17 @@ class TFDWConvTranspose2d(keras.layers.Layer):
                                          use_bias=True,
                                          kernel_initializer=keras.initializers.Constant(weight[..., i:i + 1]),
                                          bias_initializer=keras.initializers.Constant(bias[i])) for i in range(c1)]
+
+        conv = keras.layers.Conv2D(
+            filters=c2,
+            kernel_size=k,
+            strides=s,
+            padding='SAME' if s == 1 else 'VALID',
+            use_bias=not hasattr(w, 'bn'),
+            kernel_initializer=keras.initializers.Constant(w.conv.weight.permute(2, 3, 1, 0).numpy()),
+            bias_initializer='zeros' if hasattr(w, 'bn') else keras.initializers.Constant(w.conv.bias.numpy()))
+        self.conv = conv if s == 1 else keras.Sequential([TFPad(autopad(k, p)), conv])
+
 
     def call(self, inputs):
         return tf.concat([m(x) for m, x in zip(self.conv, tf.split(inputs, self.c1, 3))], 3)[:, 1:-1, 1:-1]
